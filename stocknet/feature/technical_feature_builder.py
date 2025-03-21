@@ -42,7 +42,9 @@ class TechnicalFeatureBuilder:
             'cycle': self._build_cycle_indicators,
             'pattern': self._build_pattern_recognition,
             'statistic': self._build_statistic_indicators,
-            'price_transform': self._build_price_transforms
+            'price_transform': self._build_price_transforms,
+            'regression': self._build_regression_indicators,  # 新增线性回归指标组
+            'directional': self._build_directional_indicators  # 新增方向性指标组
         }
         
         if include_groups:
@@ -139,7 +141,6 @@ class TechnicalFeatureBuilder:
                 self.logger.info(f"删除了 {dropped_rows} 行包含NaN值的数据")
         return result
 
-    # 各类技术指标构建函数（下略，保持原来的实现）
     def _build_momentum_indicators(self, inputs: dict) -> dict:
         features = {}
         for period in [6, 14, 24]:
@@ -153,12 +154,49 @@ class TechnicalFeatureBuilder:
                                     slowd_period=3, slowd_matype=0)
         features['STOCH_K'] = slowk
         features['STOCH_D'] = slowd
+        
+        # 新增: 快速随机指标
+        fastk, fastd = talib.STOCHF(inputs['high'], inputs['low'], inputs['close'],
+                                    fastk_period=5, fastd_period=3, fastd_matype=0)
+        features['STOCHF_K'] = fastk
+        features['STOCHF_D'] = fastd
+        
+        # 新增: 随机RSI
+        for period in [14]:
+            stoch_rsi_k, stoch_rsi_d = talib.STOCHRSI(inputs['close'], timeperiod=period,
+                                                      fastk_period=5, fastd_period=3, fastd_matype=0)
+            features[f'STOCHRSI_K_{period}'] = stoch_rsi_k
+            features[f'STOCHRSI_D_{period}'] = stoch_rsi_d
+        
         for period in [10, 20]:
             features[f'ROC_{period}'] = talib.ROC(inputs['close'], timeperiod=period)
+            
+            # 新增: 变化率百分比
+            features[f'ROCP_{period}'] = talib.ROCP(inputs['close'], timeperiod=period)
+            
+            # 新增: 变化率比率
+            features[f'ROCR_{period}'] = talib.ROCR(inputs['close'], timeperiod=period)
+            
+            # 新增: 变化率比率100
+            features[f'ROCR100_{period}'] = talib.ROCR100(inputs['close'], timeperiod=period)
+        
         for period in [14, 20]:
             features[f'CCI_{period}'] = talib.CCI(inputs['high'], inputs['low'], inputs['close'], timeperiod=period)
+        
         features['ULTOSC'] = talib.ULTOSC(inputs['high'], inputs['low'], inputs['close'], timeperiod1=7, timeperiod2=14, timeperiod3=28)
         features['WILLR_14'] = talib.WILLR(inputs['high'], inputs['low'], inputs['close'], timeperiod=14)
+        
+        # 新增: 钱德动量振荡器
+        for period in [14, 20]:
+            features[f'CMO_{period}'] = talib.CMO(inputs['close'], timeperiod=period)
+        
+        # 新增: MOM动量
+        for period in [10, 14]:
+            features[f'MOM_{period}'] = talib.MOM(inputs['close'], timeperiod=period)
+        
+        # 新增: 百分比价格振荡器
+        features['PPO'] = talib.PPO(inputs['close'], fastperiod=12, slowperiod=26, matype=0)
+        
         return features
 
     def _build_trend_indicators(self, inputs: dict) -> dict:
@@ -167,16 +205,44 @@ class TechnicalFeatureBuilder:
             features[f'SMA_{period}'] = talib.SMA(inputs['close'], timeperiod=period)
         for period in [5, 10, 20, 50, 200]:
             features[f'EMA_{period}'] = talib.EMA(inputs['close'], timeperiod=period)
+            
+        # 新增: 双指数移动平均线
+        for period in [20, 50]:
+            features[f'DEMA_{period}'] = talib.DEMA(inputs['close'], timeperiod=period)
+            
+        # 新增: 三角移动平均线
+        for period in [20, 30]:
+            features[f'TRIMA_{period}'] = talib.TRIMA(inputs['close'], timeperiod=period)
+            
+        # 新增: 加权移动平均线
+        for period in [20, 50]:
+            features[f'WMA_{period}'] = talib.WMA(inputs['close'], timeperiod=period)
+            
+        # 新增: 三重指数平滑移动平均线
+        for period in [20, 30]:
+            features[f'TRIX_{period}'] = talib.TRIX(inputs['close'], timeperiod=period)
+            
         features['KAMA_30'] = talib.KAMA(inputs['close'], timeperiod=30)
         features['TEMA_20'] = talib.TEMA(inputs['close'], timeperiod=20)
-        features['ADX_14'] = talib.ADX(inputs['high'], inputs['low'], inputs['close'], timeperiod=14)
-        features['ADXR_14'] = talib.ADXR(inputs['high'], inputs['low'], inputs['close'], timeperiod=14)
+        
+        # 方向性指标现在移动到_build_directional_indicators
+        
         features['APO'] = talib.APO(inputs['close'], fastperiod=12, slowperiod=26, matype=0)
         aroon_down, aroon_up = talib.AROON(inputs['high'], inputs['low'], timeperiod=14)
         features['AROON_DOWN'] = aroon_down
         features['AROON_UP'] = aroon_up
         features['AROONOSC_14'] = talib.AROONOSC(inputs['high'], inputs['low'], timeperiod=14)
         features['BOP'] = talib.BOP(inputs['open'], inputs['high'], inputs['low'], inputs['close'])
+        
+        # 新增: 抛物线转向
+        features['SAR'] = talib.SAR(inputs['high'], inputs['low'], acceleration=0.02, maximum=0.2)
+        
+        # 新增: 抛物线转向扩展版
+        try:
+            features['SAREXT'] = talib.SAREXT(inputs['high'], inputs['low'])
+        except Exception:
+            pass
+            
         features['SMA_5_10_RATIO'] = features['SMA_5'] / features['SMA_10']
         features['SMA_10_20_RATIO'] = features['SMA_10'] / features['SMA_20']
         features['SMA_20_50_RATIO'] = features['SMA_20'] / features['SMA_50']
@@ -189,6 +255,11 @@ class TechnicalFeatureBuilder:
             features[f'ATR_{period}'] = talib.ATR(inputs['high'], inputs['low'], inputs['close'], timeperiod=period)
         for period in [10, 20, 50]:
             features[f'STDDEV_{period}'] = talib.STDDEV(inputs['close'], timeperiod=period, nbdev=1)
+        
+        # 新增: 方差指标
+        for period in [10, 20]:
+            features[f'VAR_{period}'] = talib.VAR(inputs['close'], timeperiod=period, nbdev=1)
+            
         for period in [20]:
             upperband, middleband, lowerband = talib.BBANDS(inputs['close'], timeperiod=period, nbdevup=2, nbdevdn=2, matype=0)
             features[f'BBANDS_UPPER_{period}'] = upperband
@@ -198,6 +269,17 @@ class TechnicalFeatureBuilder:
         for period in [14]:
             features[f'NATR_{period}'] = talib.NATR(inputs['high'], inputs['low'], inputs['close'], timeperiod=period)
         features['TRANGE'] = talib.TRANGE(inputs['high'], inputs['low'], inputs['close'])
+        
+        # 新增: Beta指标
+        try:
+            high_series = pd.Series(inputs['high'])
+            low_series = pd.Series(inputs['low'])
+            for period in [10, 20]:
+                if len(high_series) >= period:
+                    features[f'BETA_{period}'] = talib.BETA(inputs['high'], inputs['low'], timeperiod=period)
+        except Exception:
+            pass
+            
         for period in [10, 20]:
             features[f'CHAIKIN_VOL_{period}'] = talib.ADOSC(inputs['high'], inputs['low'], inputs['close'], inputs['volume'], fastperiod=3, slowperiod=period)
         return features
@@ -215,6 +297,16 @@ class TechnicalFeatureBuilder:
         volume_series = pd.Series(inputs['volume'])
         features['VOLUME_ROC_5'] = volume_series.pct_change(5).values
         features['VOLUME_ROC_10'] = volume_series.pct_change(10).values
+        
+        # 新增: 相关系数
+        close_series = pd.Series(inputs['close'])
+        for period in [10, 20, 30]:
+            try:
+                if len(close_series) >= period and len(volume_series) >= period:
+                    features[f'CORREL_{period}'] = talib.CORREL(inputs['close'], inputs['volume'], timeperiod=period)
+            except Exception:
+                pass
+        
         for period in [10, 20]:
             price_change = pd.Series(inputs['close']).pct_change(period).values
             volume_change = volume_series.pct_change(period).values
@@ -259,25 +351,77 @@ class TechnicalFeatureBuilder:
 
     def _build_pattern_recognition(self, inputs: dict) -> dict:
         features = {}
+        # 扩展K线形态识别函数列表
         common_patterns = [
-            talib.CDL3OUTSIDE,
-            talib.CDLENGULFING,
-            talib.CDLHAMMER,
-            talib.CDLINVERTEDHAMMER,
-            talib.CDLMORNINGSTAR,
-            talib.CDLEVENINGSTAR,
-            talib.CDLHANGINGMAN,
-            talib.CDLSHOOTINGSTAR,
-            talib.CDLMARUBOZU,
-            talib.CDLHARAMI,
-            talib.CDLDOJI
+            talib.CDL2CROWS,           # 两只乌鸦
+            talib.CDL3BLACKCROWS,      # 三只黑乌鸦
+            talib.CDL3INSIDE,          # 三内部上涨和下跌
+            talib.CDL3LINESTRIKE,      # 三线打击
+            talib.CDL3OUTSIDE,         # 三外部上涨和下跌
+            talib.CDL3STARSINSOUTH,    # 南方三星
+            talib.CDL3WHITESOLDIERS,   # 三白兵
+            talib.CDLABANDONEDBABY,    # 弃婴
+            talib.CDLADVANCEBLOCK,     # 大敌当前
+            talib.CDLBELTHOLD,         # 腰带线
+            talib.CDLBREAKAWAY,        # 突破
+            talib.CDLCLOSINGMARUBOZU,  # 收盘缺影线
+            talib.CDLCONCEALBABYSWALL, # 藏婴吞没
+            talib.CDLCOUNTERATTACK,    # 反击线
+            talib.CDLDARKCLOUDCOVER,   # 乌云盖顶
+            talib.CDLDOJI,             # 十字
+            talib.CDLDOJISTAR,         # 十字星
+            talib.CDLDRAGONFLYDOJI,    # 蜻蜓十字
+            talib.CDLENGULFING,        # 吞没形态
+            talib.CDLEVENINGDOJISTAR,  # 黄昏十字星
+            talib.CDLEVENINGSTAR,      # 黄昏之星
+            talib.CDLGAPSIDESIDEWHITE, # 向上/下跳空并列阳线
+            talib.CDLGRAVESTONEDOJI,   # 墓碑十字
+            talib.CDLHAMMER,           # 锤子线
+            talib.CDLHANGINGMAN,       # 上吊线
+            talib.CDLHARAMI,           # 母子线
+            talib.CDLHARAMICROSS,      # 十字孕线
+            talib.CDLHIGHWAVE,         # 风高浪大线
+            talib.CDLHIKKAKE,          # 陷阱
+            talib.CDLHIKKAKEMOD,       # 修正陷阱
+            talib.CDLHOMINGPIGEON,     # 家鸽
+            talib.CDLIDENTICAL3CROWS,  # 三胞胎乌鸦
+            talib.CDLINNECK,           # 颈内线
+            talib.CDLINVERTEDHAMMER,   # 倒锤头
+            talib.CDLKICKING,          # 反冲形态
+            talib.CDLKICKINGBYLENGTH,  # 由较长缺影线决定的反冲形态
+            talib.CDLLADDERBOTTOM,     # 梯底
+            talib.CDLLONGLEGGEDDOJI,   # 长脚十字
+            talib.CDLLONGLINE,         # 长线
+            talib.CDLMARUBOZU,         # 光头光脚/缺影线
+            talib.CDLMATCHINGLOW,      # 相同低价
+            talib.CDLMATHOLD,          # 铺垫
+            talib.CDLMORNINGDOJISTAR,  # 晨星十字
+            talib.CDLMORNINGSTAR,      # 晨星
+            talib.CDLONNECK,           # 颈上线
+            talib.CDLPIERCING,         # 刺透形态
+            talib.CDLRICKSHAWMAN,      # 黄包车夫
+            talib.CDLRISEFALL3METHODS, # 上升/下降三法
+            talib.CDLSEPARATINGLINES,  # 分离线
+            talib.CDLSHOOTINGSTAR,     # 射击之星
+            talib.CDLSHORTLINE,        # 短线
+            talib.CDLSPINNINGTOP,      # 纺锤
+            talib.CDLSTALLEDPATTERN,   # 停顿形态
+            talib.CDLSTICKSANDWICH,    # 条形三明治
+            talib.CDLTAKURI,           # 探水竿
+            talib.CDLTASUKIGAP,        # 跳空并列阴阳线
+            talib.CDLTHRUSTING,        # 插入
+            talib.CDLTRISTAR,          # 三星
+            talib.CDLUNIQUE3RIVER,     # 奇特三河床
+            talib.CDLUPSIDEGAP2CROWS,  # 向上跳空的两只乌鸦
+            talib.CDLXSIDEGAP3METHODS  # 上升/下降跳空三法
         ]
+        
         for pattern_func in common_patterns:
             pattern_name = pattern_func.__name__
             try:
                 features[pattern_name] = pattern_func(inputs['open'], inputs['high'], inputs['low'], inputs['close'])
             except Exception as e:
-                print(f"计算 {pattern_name} 时出错: {e}")
+                self.logger.warning(f"计算 {pattern_name} 时出错: {e}")
         return features
 
     def _build_statistic_indicators(self, inputs: dict) -> dict:
@@ -310,6 +454,21 @@ class TechnicalFeatureBuilder:
             roll_max = pd.Series(inputs['high']).rolling(period).max()
             roll_min = pd.Series(inputs['low']).rolling(period).min()
             features[f'RANGE_{period}'] = ((roll_max - roll_min) / roll_min).values
+            
+        # 新增: 最大/最小值计算
+        for period in [10, 20, 50]:
+            features[f'MAX_{period}'] = talib.MAX(inputs['close'], timeperiod=period)
+            features[f'MIN_{period}'] = talib.MIN(inputs['close'], timeperiod=period)
+            
+        # 新增: 最大/最小值索引
+        for period in [10, 20]:
+            features[f'MAXINDEX_{period}'] = talib.MAXINDEX(inputs['close'], timeperiod=period)
+            features[f'MININDEX_{period}'] = talib.MININDEX(inputs['close'], timeperiod=period)
+            
+        # 新增: 求和指标
+        for period in [10, 20]:
+            features[f'SUM_{period}'] = talib.SUM(inputs['close'], timeperiod=period)
+        
         return features
 
     def _build_price_transforms(self, inputs: dict) -> dict:
@@ -322,13 +481,81 @@ class TechnicalFeatureBuilder:
         features['WCLPRICE'] = talib.WCLPRICE(inputs['high'], inputs['low'], inputs['close'])
         features['MEDPRICE'] = talib.MEDPRICE(inputs['high'], inputs['low'])
         features['TYPPRICE'] = talib.TYPPRICE(inputs['high'], inputs['low'], inputs['close'])
+        
+        # 新增: 中点价格
+        for period in [10, 20]:
+            features[f'MIDPOINT_{period}'] = talib.MIDPOINT(inputs['close'], timeperiod=period)
+            features[f'MIDPRICE_{period}'] = talib.MIDPRICE(inputs['high'], inputs['low'], timeperiod=period)
+        
         try:
             mama, fama = talib.MAMA(inputs['close'], fastlimit=0.5, slowlimit=0.05)
             features['MAMA'] = mama
             features['FAMA'] = fama
         except Exception:
             pass
+        
         features['T3_10'] = talib.T3(inputs['close'], timeperiod=10, vfactor=0.7)
+        
+        # 新增: 时间序列预测
+        for period in [10, 20]:
+            try:
+                features[f'TSF_{period}'] = talib.TSF(inputs['close'], timeperiod=period)
+            except Exception:
+                pass
+        
+        return features
+        
+    def _build_regression_indicators(self, inputs: dict) -> dict:
+        """构建线性回归相关指标"""
+        features = {}
+        
+        for period in [10, 14, 20, 30]:
+            try:
+                # 线性回归线
+                features[f'LINEARREG_{period}'] = talib.LINEARREG(inputs['close'], timeperiod=period)
+                
+                # 线性回归角度
+                features[f'LINEARREG_ANGLE_{period}'] = talib.LINEARREG_ANGLE(inputs['close'], timeperiod=period)
+                
+                # 线性回归截距
+                features[f'LINEARREG_INTERCEPT_{period}'] = talib.LINEARREG_INTERCEPT(inputs['close'], timeperiod=period)
+                
+                # 线性回归斜率
+                features[f'LINEARREG_SLOPE_{period}'] = talib.LINEARREG_SLOPE(inputs['close'], timeperiod=period)
+            except Exception as e:
+                self.logger.warning(f"计算周期 {period} 的回归指标时出错: {e}")
+                
+        return features
+    
+    def _build_directional_indicators(self, inputs: dict) -> dict:
+        """构建方向性指标"""
+        features = {}
+        
+        for period in [14, 20]:
+            try:
+                # 方向性指数
+                features[f'DX_{period}'] = talib.DX(inputs['high'], inputs['low'], inputs['close'], timeperiod=period)
+                
+                # 平均方向性指数
+                features[f'ADX_{period}'] = talib.ADX(inputs['high'], inputs['low'], inputs['close'], timeperiod=period)
+                
+                # 平均方向性指数评级
+                features[f'ADXR_{period}'] = talib.ADXR(inputs['high'], inputs['low'], inputs['close'], timeperiod=period)
+                
+                # 正方向指标
+                features[f'PLUS_DI_{period}'] = talib.PLUS_DI(inputs['high'], inputs['low'], inputs['close'], timeperiod=period)
+                
+                # 负方向指标
+                features[f'MINUS_DI_{period}'] = talib.MINUS_DI(inputs['high'], inputs['low'], inputs['close'], timeperiod=period)
+                
+                # 正方向运动
+                features[f'PLUS_DM_{period}'] = talib.PLUS_DM(inputs['high'], inputs['low'], timeperiod=period)
+                
+                # 负方向运动
+                features[f'MINUS_DM_{period}'] = talib.MINUS_DM(inputs['high'], inputs['low'], timeperiod=period)
+            except Exception as e:
+                self.logger.warning(f"计算周期 {period} 的方向性指标时出错: {e}")
+                
         return features
 
     def get_feature_descriptions(self) -> dict:

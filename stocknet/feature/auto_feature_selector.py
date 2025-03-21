@@ -201,7 +201,9 @@ class AutoFeatureSelector:
         return selected, importance_df
 
     def _select_by_pca_importance(self, stock_data: pd.DataFrame, target_col: str) -> Tuple[List[str], pd.DataFrame]:
-        X = stock_data.fillna(method='ffill').fillna(method='bfill').values
+        #X = stock_data.fillna(method='ffill').fillna(method='bfill').values
+        # 修复后的代码:
+        X = stock_data.ffill().bfill().values
         X = StandardScaler().fit_transform(X)
         pca = PCA(n_components=min(len(stock_data.columns), 10))
         pca.fit(X)
